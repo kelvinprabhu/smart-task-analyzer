@@ -5,27 +5,38 @@ from rest_framework.response import Response
 from rest_framework import status
 
 
+import datetime
+from collections import defaultdict
+
 class PriorityEngine:
     """
-    PriorityEngine V3 - Hardened Edition
-    -------------------------------------
-    Graph-aware task scoring with comprehensive validation and error handling.
+    PriorityEngine V4 – Stable Graph-Aware Scheduler
+    ------------------------------------------------
+    Includes:
+    - Cycle detection
+    - Direct dependency boost
+    - Graph centrality propagation
+    - Depth-based discount (critical fix)
+    - Balanced urgency/importance
+    - Safe defaults for bad data
     """
 
     # CONFIGURABLE WEIGHTS
-    U_MAX = 14
-    W_URGENCY = 0.6
-    W_IMPORTANCE = 0.4
-    ALPHA = 0.4
-    LAMBDA = 0.15
-    CENTRALITY_ITER = 8
+    U_MAX = 10 # days for max urgency
+    W_URGENCY = 0.7 # weight for urgency
+    W_IMPORTANCE = 0.8 # weight for importance
+    ALPHA = 0.5 # weight for direct dependency boost
+    LAMBDA = 0.35 # weight for centrality propagation
+    CENTRALITY_ITER = 12 # number of iterations for centrality calculation
 
     def __init__(self, tasks):
         self.tasks = tasks
         self.today = datetime.date.today()
 
+    
+    #  EFFORT SCORE FOR API RESPONSE
+    
     def effort_score(self, task):
-        """Public-facing effort score for API responses."""
         hours = getattr(task, "estimated_hours", None)
         if hours is None:
             hours = getattr(task, "effort", None)
@@ -33,26 +44,27 @@ class PriorityEngine:
             return 0.0
         return float(self.effort_factor(task))
 
+    
+    #  DIRECT DEPENDENCY COUNT FOR API RESPONSE
+    
     def dependency_score(self, task):
-        """Compute dependency influence for a single task."""
-        dependents_count = 0
+        count = 0
         for t in self.tasks:
             if task in t.dependencies.all():
-                dependents_count += 1
-        return self.direct_dependency_factor(task, {task.id: dependents_count})
+                count += 1
+        return self.direct_dependency_factor(task, {task.id: count})
 
-    # ============================================================
-    # CYCLE DETECTION
-    # ============================================================
+    
+    #  CYCLE DETECTION
+    
     def detect_cycles(self):
-        """Detects circular dependencies using DFS."""
         visited = set()
         stack = set()
-        cyclic_tasks = set()
+        cyclic = set()
 
         def dfs(task):
             if task.id in stack:
-                cyclic_tasks.add(task.id)
+                cyclic.add(task.id)
                 return True
             if task.id in visited:
                 return False
@@ -62,68 +74,79 @@ class PriorityEngine:
 
             for dep in task.dependencies.all():
                 if dfs(dep):
-                    cyclic_tasks.add(task.id)
+                    cyclic.add(task.id)
 
             stack.remove(task.id)
             return False
 
-        for task in self.tasks:
-            if task.id not in visited:
-                dfs(task)
+        for t in self.tasks:
+            if t.id not in visited:
+                dfs(t)
 
-        return list(cyclic_tasks)
+        return list(cyclic)
 
-    # ============================================================
-    # COMPONENT SCORES WITH SAFE DEFAULTS
-    # ============================================================
+    
+    #  URGENCY, IMPORTANCE, EFFORT
+    
     def urgency_score(self, task):
-        """Urgency based on due date. Safe for None/past dates."""
         if not task.due_date:
-            return 0.5  # Neutral score for tasks without due date
+            return 0.5
 
         delta = (task.due_date - self.today).days
 
         if delta < 0:
-            # Overdue: scale by how overdue (more overdue = more urgent)
-            overdue_days = abs(delta)
-            return 2.0 + min(overdue_days / 7.0, 1.0)  # Cap at 3.0
+            overdue = abs(delta)
+            return 2.0 + min(overdue / 7.0, 1.0)
 
-        # Future tasks: linear decay
         clamped = max(0, self.U_MAX - delta)
         return 1.0 + (clamped / self.U_MAX)
 
     def importance_score(self, task):
-        """Normalize importance (1-10) with bounds checking."""
-        importance = getattr(task, "importance", 5)  # Default to 5 if missing
-        if importance is None:
-            importance = 5
-        # Clamp to valid range
-        importance = max(1, min(10, importance))
-        return importance / 10.0
+        imp = getattr(task, "importance", 5)
+        if imp is None:
+            imp = 5
+        imp = max(1, min(10, imp))
+        return imp / 10.0
 
     def effort_factor(self, task):
-        """Inverse effort with safe lower bound."""
         hours = getattr(task, "estimated_hours", None)
         if hours is None:
-            hours = getattr(task, "effort", 2.0)  # Default 2 hours
-        
-        # Handle invalid values
+            hours = getattr(task, "effort", 2.0)
         if hours is None or hours <= 0:
-            hours = 1.0  # Default to 1 hour for invalid data
-        
-        hours = max(hours, 0.1)  # Minimum 0.1 to avoid division issues
-        return min(1.0 / hours, 10.0)  # Cap at 10x boost
+            hours = 1.0
+        hours = max(hours, 0.1)
+        return min(1.0 / hours, 10.0)
 
+    
+    #  DIRECT DEPENDENCY BOOST
+    
     def direct_dependency_factor(self, task, dependents_count):
-        """Boost for tasks that unblock others."""
-        dep_count = dependents_count.get(task.id, 0)
-        return 1.0 + (self.ALPHA * dep_count)
+        c = dependents_count.get(task.id, 0)
+        return 1.0 + (self.ALPHA * c)
 
-    # ============================================================
-    # GRAPH CENTRALITY
-    # ============================================================
+    
+    #  DEPTH CALCULATION (CRITICAL FIX)
+    # ------------------------------------------------------------
+    #  Depth = how many tasks are above this one in chain
+    #  More depth => bigger discount => lower priority
+    
+    def compute_depth(self, task, memo):
+        if task.id in memo:
+            return memo[task.id]
+
+        deps = task.dependencies.all()
+        if not deps:
+            memo[task.id] = 0
+            return 0
+
+        depth = 1 + max(self.compute_depth(dep, memo) for dep in deps)
+        memo[task.id] = depth
+        return depth
+
+    
+    #  GRAPH CENTRALITY USING KATZ PROPAGATION
+    
     def compute_centrality(self, dependents):
-        """Katz-like centrality for dependency graph."""
         if not self.tasks:
             return {}
 
@@ -139,77 +162,83 @@ class PriorityEngine:
                 new_C[t.id] = score
             C = new_C
 
-        max_val = max(C.values()) if C else 1.0
-        if max_val > 0:
-            for tid in C:
-                C[tid] /= max_val
+        max_val = max(C.values())
+        for tid in C:
+            C[tid] /= max_val
 
         return C
 
-    # ============================================================
-    # FINAL SCORE CALCULATION
-    # ============================================================
-    def calculate_score(self, task, dependents_count, centrality_map):
-        """WSJF-like priority score with network awareness."""
+    
+    #  FINAL SCORE CALCULATION (NOW WITH DEPTH DISCOUNT)
+    
+    def calculate_score(self, task, dependents_count, centrality_map, depth_map):
         urgency = self.urgency_score(task)
         importance = self.importance_score(task)
         effort = self.effort_factor(task)
 
-        value_score = (
-            urgency * self.W_URGENCY +
-            importance * self.W_IMPORTANCE
-        )
-
+        value = urgency * self.W_URGENCY + importance * self.W_IMPORTANCE
         dependency_factor = self.direct_dependency_factor(task, dependents_count)
         centrality_factor = centrality_map.get(task.id, 1.0)
 
-        final_priority = value_score * dependency_factor * centrality_factor * effort
-        return float(final_priority)
+        # ---- CRITICAL DISCOUNT ----
+        depth = depth_map.get(task.id, 0)
+        discount = 1.0 / (1.0 + depth)
 
-    # ============================================================
-    # RUN ENGINE
-    # ============================================================
+        final_score = (
+            value *
+            dependency_factor *
+            centrality_factor *
+            effort *
+            discount
+        )
+
+        return float(final_score)
+
+    
+    #  RUN ENGINE
+    
     def run(self):
-        """Execute scoring with cycle detection and validation."""
         if not self.tasks:
             return [], []
 
         # Detect cycles
         cyclic = self.detect_cycles()
-        valid_tasks = [t for t in self.tasks if t.id not in cyclic]
+        valid = [t for t in self.tasks if t.id not in cyclic]
 
-        if not valid_tasks:
+        if not valid:
             return [], cyclic
 
         # Build dependency graph
         dependents_count = defaultdict(int)
         adjacency = defaultdict(list)
 
-        for t in valid_tasks:
+        for t in valid:
             for dep in t.dependencies.all():
-                if dep.id not in cyclic:  # Only count valid dependencies
+                if dep.id not in cyclic:
                     dependents_count[dep.id] += 1
                     adjacency[dep.id].append(t.id)
 
-        # Compute centrality
+        # Depth computation
+        depth_map = {}
+        for t in valid:
+            depth_map[t.id] = self.compute_depth(t, depth_map)
+
+        # Centrality
         centrality_map = self.compute_centrality(adjacency)
 
-        # Score all tasks
+        # Scoring
         scored = []
-        for task in valid_tasks:
-            score = self.calculate_score(task, dependents_count, centrality_map)
-            scored.append({
-                "task": task,
-                "score": score
-            })
+        for task in valid:
+            score = self.calculate_score(task, dependents_count, centrality_map, depth_map)
+            scored.append({"task": task, "score": score})
 
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored, cyclic
 
 
-# ============================================================
+
 # VALIDATION UTILITIES
-# ============================================================
+
 class TaskValidator:
     """Validates and sanitizes task input data."""
     
