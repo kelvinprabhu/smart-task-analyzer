@@ -6,6 +6,8 @@ from .models import Task
 from .serializers import TaskSerializer
 from .scoring.priority_engine import PriorityEngine, TaskValidator
 from django.db import connection
+import graphviz
+
 #     def post(self, request):
 #         serializer = TaskSerializer(data=request.data, many=True)
 
@@ -296,3 +298,45 @@ class ListTasksView(APIView):
             })
 
         return Response({"tasks": data}, status=200)
+
+
+class GraphView(APIView):
+    def get(self, request):
+        tasks = Task.objects.all()
+        engine = PriorityEngine(tasks)
+        cyclic = set(engine.detect_cycles())
+
+        dot = graphviz.Digraph()
+
+        for t in tasks:
+            color = "red" if t.id in cyclic else "black"
+            dot.node(str(t.id), t.title, color=color)
+
+            for dep in t.dependencies.all():
+                dot.edge(str(dep.id), str(t.id))
+
+        return Response({"graph_dot": dot.source})
+    
+class EisenhowerView(APIView):
+    def get(self, request):
+        tasks = Task.objects.all()
+        engine = PriorityEngine(tasks)
+
+        data = []
+        for t in tasks:
+            U = engine.urgency_score(t)
+            I = engine.importance_score(t)
+
+            data.append({
+                "id": t.id,
+                "title": t.title,
+                "urgency": U,
+                "importance": I,
+                "quadrant":
+                    "Do" if U>=1.5 and I>=0.5 else
+                    "Plan" if U<1.5 and I>=0.5 else
+                    "Delegate" if U>=1.5 and I<0.5 else
+                    "Delete"
+            })
+
+        return Response({"matrix": data})
