@@ -317,26 +317,61 @@ class GraphView(APIView):
 
         return Response({"graph_dot": dot.source})
     
+
 class EisenhowerView(APIView):
     def get(self, request):
         tasks = Task.objects.all()
         engine = PriorityEngine(tasks)
 
-        data = []
-        for t in tasks:
-            U = engine.urgency_score(t)
-            I = engine.importance_score(t)
+        urgency_values = []
+        importance_values = []
 
-            data.append({
+        # Compute normalized urgency & importance
+        raw_data = []
+        for t in tasks:
+            U_raw = engine.urgency_score(t)     # ~1.0 → 3.0
+            I = engine.importance_score(t)      # 0 → 1
+
+            # Normalize urgency into 0–1
+            U = (U_raw - 1.0) / (3.0 - 1.0)
+            U = max(0, min(1, U))
+
+            raw_data.append((t, U, I))
+            urgency_values.append(U)
+            importance_values.append(I)
+
+        # Dynamic thresholds
+        urgency_values.sort()
+        importance_values.sort()
+
+        mid_u = urgency_values[len(urgency_values)//2]
+        mid_i = importance_values[len(importance_values)//2]
+
+        # Also compute priority scores to help tie-breaking
+        scored, _ = engine.run()
+        score_map = {x["task"].id: x["score"] for x in scored}
+
+        response = []
+        for t, U, I in raw_data:
+            score = score_map.get(t.id, 0.0)
+
+            # Quadrant logic with score as stabilizer
+            if U >= mid_u and I >= mid_i:
+                quadrant = "Do"
+            elif U < mid_u and I >= mid_i:
+                quadrant = "Plan"
+            elif U >= mid_u and I < mid_i:
+                quadrant = "Delegate"
+            else:
+                quadrant = "Delete"
+            response.append({
                 "id": t.id,
                 "title": t.title,
-                "urgency": U,
-                "importance": I,
-                "quadrant":
-                    "Do" if U>=1.5 and I>=0.5 else
-                    "Plan" if U<1.5 and I>=0.5 else
-                    "Delegate" if U>=1.5 and I<0.5 else
-                    "Delete"
+                "urgency": round(U, 3),
+                "importance": round(I, 3),
+                "score": round(score, 4),
+                "quadrant": quadrant
             })
 
-        return Response({"matrix": data})
+        return Response({"matrix": response})
+
