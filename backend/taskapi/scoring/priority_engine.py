@@ -3,10 +3,22 @@ from collections import defaultdict
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-
-
+from math import log1p
 import datetime
+import holidays   # pip install holidays
 from collections import defaultdict
+
+
+def working_days_between(d1, d2):
+    days = 0
+    for i in range((d2 - d1).days + 1):
+        day = d1 + datetime.timedelta(days=i)
+        if day.weekday() < 5 and day not in holidays.country_holidays("IN"):
+            days += 1
+    return days - 1
+
+
+
 
 class PriorityEngine:
     """
@@ -25,7 +37,7 @@ class PriorityEngine:
     U_MAX = 10 # days for max urgency
     W_URGENCY = 0.7 # weight for urgency
     W_IMPORTANCE = 0.8 # weight for importance
-    ALPHA = 0.5 # weight for direct dependency boost
+    ALPHA = 0.6 # weight for direct dependency boost
     LAMBDA = 0.35 # weight for centrality propagation
     CENTRALITY_ITER = 12 # number of iterations for centrality calculation
 
@@ -92,7 +104,7 @@ class PriorityEngine:
         if not task.due_date:
             return 0.5
 
-        delta = (task.due_date - self.today).days
+        delta = working_days_between(self.today, task.due_date)
 
         if delta < 0:
             overdue = abs(delta)
@@ -191,6 +203,11 @@ class PriorityEngine:
             effort *
             discount
         )
+        # Normalize final score
+        # max_score = max(final_score, 1.0)
+        final_score = log1p(final_score)
+        # range the score to 0-100
+        final_score = (final_score / log1p(1 + 1000)) * 100
 
         return float(final_score)
 
