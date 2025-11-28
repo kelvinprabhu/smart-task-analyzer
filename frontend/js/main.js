@@ -1,61 +1,61 @@
-        let taskQueue = [];
-        let currentResults = null;
-        let graphDotData = null;
+let taskQueue = [];
+let currentResults = null;
+let graphDotData = null;
 
-        // Set default date to today
-        document.getElementById('dueDate').valueAsDate = new Date();
+// Set default date to today
+document.getElementById('dueDate').valueAsDate = new Date();
 
-        function switchTab(tab) {
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
-            if (tab === 'form') {
-                document.querySelector('.tab-btn:first-child').classList.add('active');
-                document.getElementById('form-tab').classList.add('active');
-            } else {
-                document.querySelector('.tab-btn:last-child').classList.add('active');
-                document.getElementById('bulk-tab').classList.add('active');
-            }
-        }
+    if (tab === 'form') {
+        document.querySelector('.tab-btn:first-child').classList.add('active');
+        document.getElementById('form-tab').classList.add('active');
+    } else {
+        document.querySelector('.tab-btn:last-child').classList.add('active');
+        document.getElementById('bulk-tab').classList.add('active');
+    }
+}
 
-        function addTask() {
-            const title = document.getElementById('title').value;
-            const dueDate = document.getElementById('dueDate').value;
-            const estimatedHours = parseFloat(document.getElementById('estimatedHours').value);
-            const importance = parseInt(document.getElementById('importance').value);
-            const depsInput = document.getElementById('dependencies').value;
+function addTask() {
+    const title = document.getElementById('title').value;
+    const dueDate = document.getElementById('dueDate').value;
+    const estimatedHours = parseFloat(document.getElementById('estimatedHours').value);
+    const importance = parseInt(document.getElementById('importance').value);
+    const depsInput = document.getElementById('dependencies').value;
 
-            const dependencies = depsInput ? depsInput.split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d)) : [];
+    const dependencies = depsInput ? depsInput.split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d)) : [];
 
-            if (!title || !dueDate || isNaN(estimatedHours) || isNaN(importance)) {
-                alert('Please fill all required fields');
-                return;
-            }
+    if (!title || !dueDate || isNaN(estimatedHours) || isNaN(importance)) {
+        alert('Please fill all required fields');
+        return;
+    }
 
-            const task = {
-                title,
-                due_date: dueDate,
-                estimated_hours: estimatedHours,
-                importance,
-                dependencies
-            };
+    const task = {
+        title,
+        due_date: dueDate,
+        estimated_hours: estimatedHours,
+        importance,
+        dependencies
+    };
 
-            taskQueue.push(task);
-            updateTaskQueue();
+    taskQueue.push(task);
+    updateTaskQueue();
 
-            // Clear form
-            document.getElementById('singleTaskForm').reset();
-            document.getElementById('dueDate').valueAsDate = new Date();
-        }
+    // Clear form
+    document.getElementById('singleTaskForm').reset();
+    document.getElementById('dueDate').valueAsDate = new Date();
+}
 
-        function updateTaskQueue() {
-            const queueDiv = document.getElementById('taskQueue');
-            if (taskQueue.length === 0) {
-                queueDiv.innerHTML = '';
-                return;
-            }
+function updateTaskQueue() {
+    const queueDiv = document.getElementById('taskQueue');
+    if (taskQueue.length === 0) {
+        queueDiv.innerHTML = '';
+        return;
+    }
 
-            queueDiv.innerHTML = `
+    queueDiv.innerHTML = `
                 <h4 style="margin-bottom: 10px;">Tasks in Queue (${taskQueue.length})</h4>
                 ${taskQueue.map((task, index) => `
                     <div style="padding: 8px; background: #f0f0f0; margin-bottom: 5px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
@@ -64,103 +64,211 @@
                     </div>
                 `).join('')}
             `;
+}
+
+function removeTask(index) {
+    taskQueue.splice(index, 1);
+    updateTaskQueue();
+}
+
+async function analyzeTasks() {
+    const apiUrl = document.getElementById('apiUrl').value;
+    let tasksToAnalyze = [];
+
+    // -------- Determine source: form or bulk JSON --------
+    if (document.getElementById('form-tab').classList.contains('active')) {
+        if (taskQueue.length === 0) {
+            alert('Please add at least one task');
+            return;
         }
-
-        function removeTask(index) {
-            taskQueue.splice(index, 1);
-            updateTaskQueue();
+        tasksToAnalyze = taskQueue;
+    } else {
+        const bulkJson = document.getElementById('bulkJson').value.trim();
+        if (!bulkJson) {
+            alert('Please paste JSON data');
+            return;
         }
+        try {
+            tasksToAnalyze = JSON.parse(bulkJson);
+        } catch (e) {
+            return showError("Invalid JSON format in Bulk Input");
+        }
+    }
 
-        async function analyzeTasks() {
-            const apiUrl = document.getElementById('apiUrl').value;
-            let tasksToAnalyze = [];
+    showLoading();
 
-            if (document.getElementById('form-tab').classList.contains('active')) {
-                if (taskQueue.length === 0) {
-                    alert('Please add at least one task');
-                    return;
-                }
-                tasksToAnalyze = taskQueue;
-            } else {
-                const bulkJson = document.getElementById('bulkJson').value;
-                if (!bulkJson.trim()) {
-                    alert('Please paste JSON data');
-                    return;
-                }
-                try {
-                    tasksToAnalyze = JSON.parse(bulkJson);
-                } catch (e) {
-                    alert('Invalid JSON format');
-                    return;
-                }
-            }
+    try {
+        const response = await fetch(`${apiUrl}/api/tasks/analyze/`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(tasksToAnalyze)
+        });
 
-            showLoading();
+        // ----------- ERROR RESPONSE 4xx / 5xx -----------
+        if (!response.ok) {
+            let errJson = null;
 
             try {
-                const response = await fetch(`${apiUrl}/api/tasks/analyze/`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(tasksToAnalyze)
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const data = await response.json();
-                currentResults = data;
-                displayResults(data);
-                displayStats(data.stats);
-                await loadEisenhowerMatrix();
-                await loadDependencyGraph();
-
-                // Clear queue after successful analysis
-                taskQueue = [];
-                updateTaskQueue();
-
-            } catch (error) {
-                showError('Failed to analyze tasks: ' + error.message);
+                errJson = await response.json();   // backend error
+            } catch {
+                return showError("Server returned an invalid error response.");
             }
+
+            return showError(errJson);
         }
 
-        function showLoading() {
-            document.getElementById('results').innerHTML = `
+        // ----------- SUCCESS RESPONSE -----------
+        let data;
+        try {
+            data = await response.json();
+        } catch {
+            return showError("Server returned unreadable JSON.");
+        }
+
+        currentResults = data;
+        displayResults(data);
+        displayStats(data.stats);
+
+        await loadEisenhowerMatrix();
+        await loadDependencyGraph();
+
+        taskQueue = [];
+        updateTaskQueue();
+
+    } catch (error) {
+        // Real network failures, not backend validation
+        return showError("Network / CORS Error: " + error.message);
+    }
+}
+
+
+
+function showLoading() {
+    document.getElementById('results').innerHTML = `
                 <div class="loading">
                     <div class="spinner"></div>
                     <p>Analyzing your tasks...</p>
                 </div>
             `;
+}
+
+function showError(err) {
+    let html = `
+        <div class="error-box">
+            <h3> Task Analysis Error</h3>
+    `;
+
+
+    // BACKEND STRUCTURED ERROR JSON
+
+    if (err && typeof err === "object") {
+
+        // ---- Error title ----
+        if (err.error) {
+            html += `<p><strong>Error:</strong> ${err.error}</p>`;
         }
 
-        function showError(message) {
-            document.getElementById('results').innerHTML = `
-                <div class="error">
-                    <strong>Error:</strong> ${message}
+        // ---- Main message ----
+        if (err.message) {
+            html += `<p><strong>Message:</strong> ${err.message}</p>`;
+        }
+
+
+        // INVALID TASKS (Validation Failures)
+
+        if (Array.isArray(err.invalid_tasks) && err.invalid_tasks.length > 0) {
+            html += `<h4> Invalid Tasks</h4><ul>`;
+            err.invalid_tasks.forEach(t => {
+                html += `
+                    <li>
+                        <strong>#${t.task_index} — ${t.task_title}</strong>
+                        <ul>${t.errors.map(e => `<li>${e}</li>`).join("")}</ul>
+                    </li>
+                `;
+            });
+            html += `</ul>`;
+        }
+
+
+        // CYCLIC DEPENDENCIES
+
+        if (Array.isArray(err.cyclic_task_ids) && err.cyclic_task_ids.length > 0) {
+
+            const ids = err.cyclic_task_ids.join(", ");
+
+            html += `
+                <div class="cycle-warning">
+                    <h4> Circular Dependencies Detected</h4>
+                    <p>The following tasks participate in a cycle:</p>
+                    <p><strong>${ids}</strong></p>
+                    <p class="small-note">Fix: remove or reorganize dependencies so that no task indirectly depends on itself.</p>
                 </div>
             `;
         }
 
-        function displayResults(data) {
-            const resultsDiv = document.getElementById('results');
 
-            if (!data.scored_tasks || data.scored_tasks.length === 0) {
-                resultsDiv.innerHTML = `
+        // WARNINGS
+
+        if (Array.isArray(err.warnings) && err.warnings.length > 0) {
+            html += `<h4> Warnings</h4><ul>`;
+            err.warnings.forEach(w => {
+
+                // PRETTY CYCLE FORMATTING
+                if (w.toLowerCase().includes("circular")) {
+
+                    // Extract task IDs from the warning string
+                    const match = w.match(/\[(.*?)\]/);
+                    const idList = match ? match[1].split(",").map(i => i.trim()) : [];
+
+                    html += `
+                        <li class="cycle-warning">
+                            <strong>Circular Dependency Detected</strong><br>
+                            Involved Task IDs: <strong>${idList.join(", ")}</strong><br>
+                        </li>
+                    `;
+                } else {
+                    html += `<li>${w}</li>`;
+                }
+            });
+            html += `</ul>`;
+        }
+
+        html += `</div>`;
+        document.getElementById('results').innerHTML = html;
+        return;
+    }
+
+
+    // PLAIN STRING ERROR
+
+    document.getElementById('results').innerHTML = `
+        <div class="error-box">
+            <h3>Error</h3>
+            <p>${err}</p>
+        </div>
+    `;
+}
+
+
+
+function displayResults(data) {
+    const resultsDiv = document.getElementById('results');
+
+    if (!data.scored_tasks || data.scored_tasks.length === 0) {
+        resultsDiv.innerHTML = `
                     <div class="empty-state">
                         <h3>No valid tasks found</h3>
                         <p>Please check your input and try again</p>
                     </div>
                 `;
-                return;
-            }
+        return;
+    }
 
-            const tasksHtml = data.scored_tasks.map(task => {
-                const priorityClass = task.score > 0.6 ? 'high-priority' : task.score > 0.3 ? 'medium-priority' : 'low-priority';
-                const scoreColor = task.score > 0.6 ? '#5f282dff' : task.score > 0.3 ? '#ffc107' : '#184122ff';
+    const tasksHtml = data.scored_tasks.map(task => {
+        const priorityClass = task.score > 0.6 ? 'high-priority' : task.score > 0.3 ? 'medium-priority' : 'low-priority';
+        const scoreColor = task.score > 0.6 ? '#5f282dff' : task.score > 0.3 ? '#ffc107' : '#184122ff';
 
-                return `
+        return `
                     <div class="task-item ${priorityClass}">
                         <div class="task-header">
                             <div>
@@ -197,38 +305,38 @@
                         </div>
                     </div>
                 `;
-            }).join('');
+    }).join('');
 
-            resultsDiv.innerHTML = tasksHtml;
-        }
+    resultsDiv.innerHTML = tasksHtml;
+}
 
-        function generateExplanation(task) {
-            let explanation = [];
+function generateExplanation(task) {
+    let explanation = [];
 
-            if (task.urgency > 1.5) {
-                explanation.push('<strong>High urgency</strong> due to approaching deadline');
-            }
-            if (task.importance > 0.7) {
-                explanation.push('<strong>Very important</strong> task with high business value');
-            }
-            if (task.effort_factor > 0.5) {
-                explanation.push('<strong>Quick win</strong> - low effort required');
-            }
-            if (task.blocked) {
-                explanation.push('Currently blocked by other tasks - complete dependencies first');
-            }
-            if (!task.blocked && task.score > 0.6) {
-                explanation.push('<strong>Top priority</strong> - Start this task immediately!');
-            }
+    if (task.urgency > 1.5) {
+        explanation.push('<strong>High urgency</strong> due to approaching deadline');
+    }
+    if (task.importance > 0.7) {
+        explanation.push('<strong>Very important</strong> task with high business value');
+    }
+    if (task.effort_factor > 0.5) {
+        explanation.push('<strong>Quick win</strong> - low effort required');
+    }
+    if (task.blocked) {
+        explanation.push('Currently blocked by other tasks - complete dependencies first');
+    }
+    if (!task.blocked && task.score > 0.6) {
+        explanation.push('<strong>Top priority</strong> - Start this task immediately!');
+    }
 
-            return explanation.length > 0 ? explanation.join('<br>') : 'Standard priority task';
-        }
+    return explanation.length > 0 ? explanation.join('<br>') : 'Standard priority task';
+}
 
-        function displayStats(stats) {
-            const statsCard = document.getElementById('statsCard');
-            statsCard.style.display = 'block';
+function displayStats(stats) {
+    const statsCard = document.getElementById('statsCard');
+    statsCard.style.display = 'block';
 
-            statsCard.innerHTML = `
+    statsCard.innerHTML = `
                 <div class="stats-card">
                     <h2>Analysis Statistics</h2>
                     <div class="stats-grid">
@@ -255,41 +363,41 @@
                     </div>
                 </div>
             `;
+}
+
+async function loadEisenhowerMatrix() {
+    const apiUrl = document.getElementById('apiUrl').value;
+
+    try {
+        const response = await fetch(`${apiUrl}/api/tasks/eisenhower/`);
+        const data = await response.json();
+
+        displayEisenhowerMatrix(data.matrix);
+    } catch (error) {
+        console.error('Failed to load Eisenhower matrix:', error);
+    }
+}
+
+function displayEisenhowerMatrix(matrix) {
+    const card = document.getElementById('eisenhowerCard');
+    const matrixDiv = document.getElementById('eisenhowerMatrix');
+
+    card.style.display = 'block';
+
+    const quadrants = {
+        'Do': { tasks: [], color: 'do' },
+        'Schedule': { tasks: [], color: 'schedule' },
+        'Delegate': { tasks: [], color: 'delegate' },
+        'Eliminate': { tasks: [], color: 'eliminate' }
+    };
+
+    matrix.forEach(task => {
+        if (quadrants[task.quadrant]) {
+            quadrants[task.quadrant].tasks.push(task);
         }
+    });
 
-        async function loadEisenhowerMatrix() {
-            const apiUrl = document.getElementById('apiUrl').value;
-
-            try {
-                const response = await fetch(`${apiUrl}/api/tasks/eisenhower/`);
-                const data = await response.json();
-
-                displayEisenhowerMatrix(data.matrix);
-            } catch (error) {
-                console.error('Failed to load Eisenhower matrix:', error);
-            }
-        }
-
-        function displayEisenhowerMatrix(matrix) {
-            const card = document.getElementById('eisenhowerCard');
-            const matrixDiv = document.getElementById('eisenhowerMatrix');
-
-            card.style.display = 'block';
-
-            const quadrants = {
-                'Do': { tasks: [], color: 'do' },
-                'Schedule': { tasks: [], color: 'schedule' },
-                'Delegate': { tasks: [], color: 'delegate' },
-                'Eliminate': { tasks: [], color: 'eliminate' }
-            };
-
-            matrix.forEach(task => {
-                if (quadrants[task.quadrant]) {
-                    quadrants[task.quadrant].tasks.push(task);
-                }
-            });
-
-            matrixDiv.innerHTML = Object.entries(quadrants).map(([name, data]) => `
+    matrixDiv.innerHTML = Object.entries(quadrants).map(([name, data]) => `
                 <div class="quadrant quadrant-${data.color}">
                     <h3>${name} (${data.tasks.length})</h3>
                     ${data.tasks.map(task => `
@@ -302,106 +410,106 @@
                     `).join('')}
                 </div>
             `).join('');
+}
+
+function applySortingStrategy() {
+    if (!currentResults) return;
+
+    const strategy = document.getElementById('strategy').value;
+    let sortedTasks = [...currentResults.scored_tasks];
+
+    switch (strategy) {
+        case 'fastest':
+            sortedTasks.sort((a, b) => b.effort_factor - a.effort_factor);
+            break;
+        case 'impact':
+            sortedTasks.sort((a, b) => b.importance - a.importance);
+            break;
+        case 'deadline':
+            sortedTasks.sort((a, b) => b.urgency - a.urgency);
+            break;
+        case 'smart':
+        default:
+            sortedTasks.sort((a, b) => b.score - a.score);
+            break;
+    }
+
+    displayResults({ ...currentResults, scored_tasks: sortedTasks });
+}
+
+async function resetDatabase() {
+    if (!confirm('Are you sure you want to reset the database? This will delete all tasks.')) {
+        return;
+    }
+
+    const apiUrl = document.getElementById('apiUrl').value;
+
+    try {
+        const response = await fetch(`${apiUrl}/api/tasks/reset/`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to reset database');
         }
 
-        function applySortingStrategy() {
-            if (!currentResults) return;
+        alert('Database reset successfully!');
 
-            const strategy = document.getElementById('strategy').value;
-            let sortedTasks = [...currentResults.scored_tasks];
-
-            switch (strategy) {
-                case 'fastest':
-                    sortedTasks.sort((a, b) => b.effort_factor - a.effort_factor);
-                    break;
-                case 'impact':
-                    sortedTasks.sort((a, b) => b.importance - a.importance);
-                    break;
-                case 'deadline':
-                    sortedTasks.sort((a, b) => b.urgency - a.urgency);
-                    break;
-                case 'smart':
-                default:
-                    sortedTasks.sort((a, b) => b.score - a.score);
-                    break;
-            }
-
-            displayResults({ ...currentResults, scored_tasks: sortedTasks });
-        }
-
-        async function resetDatabase() {
-            if (!confirm('Are you sure you want to reset the database? This will delete all tasks.')) {
-                return;
-            }
-
-            const apiUrl = document.getElementById('apiUrl').value;
-
-            try {
-                const response = await fetch(`${apiUrl}/api/tasks/reset/`, {
-                    method: 'DELETE'
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to reset database');
-                }
-
-                alert('Database reset successfully!');
-
-                // Clear UI
-                document.getElementById('results').innerHTML = `
+        // Clear UI
+        document.getElementById('results').innerHTML = `
                     <div class="empty-state">
                         <h3>Database Reset</h3>
                         <p>All tasks have been cleared</p>
                     </div>
                 `;
-                document.getElementById('statsCard').style.display = 'none';
-                document.getElementById('eisenhowerCard').style.display = 'none';
-                currentResults = null;
+        document.getElementById('statsCard').style.display = 'none';
+        document.getElementById('eisenhowerCard').style.display = 'none';
+        currentResults = null;
 
-            } catch (error) {
-                alert('Error resetting database: ' + error.message);
-            }
+    } catch (error) {
+        alert('Error resetting database: ' + error.message);
+    }
+}
+
+async function loadTopSuggestions() {
+    const apiUrl = document.getElementById('apiUrl').value;
+
+    try {
+        const response = await fetch(`${apiUrl}/api/tasks/suggest/`);
+
+        if (!response.ok) {
+            throw new Error('Failed to load suggestions');
         }
 
-        async function loadTopSuggestions() {
-            const apiUrl = document.getElementById('apiUrl').value;
+        const data = await response.json();
+        displayTopSuggestions(data);
 
-            try {
-                const response = await fetch(`${apiUrl}/api/tasks/suggest/`);
+    } catch (error) {
+        alert('Error loading suggestions: ' + error.message);
+    }
+}
 
-                if (!response.ok) {
-                    throw new Error('Failed to load suggestions');
-                }
+function displayTopSuggestions(data) {
+    const card = document.getElementById('suggestCard');
+    const resultsDiv = document.getElementById('suggestResults');
 
-                const data = await response.json();
-                displayTopSuggestions(data);
+    card.style.display = 'block';
 
-            } catch (error) {
-                alert('Error loading suggestions: ' + error.message);
-            }
-        }
-
-        function displayTopSuggestions(data) {
-            const card = document.getElementById('suggestCard');
-            const resultsDiv = document.getElementById('suggestResults');
-
-            card.style.display = 'block';
-
-            if (!data.top_tasks || data.top_tasks.length === 0) {
-                resultsDiv.innerHTML = `
+    if (!data.top_tasks || data.top_tasks.length === 0) {
+        resultsDiv.innerHTML = `
                     <div class="empty-state">
                         <h3>No suggestions available</h3>
                         <p>Analyze some tasks first to get recommendations</p>
                     </div>
                 `;
-                return;
-            }
+        return;
+    }
 
-            const suggestionsHtml = data.top_tasks.map((task, index) => {
-                const isTopPick = index === 0;
-                const rankNum = index + 1;
+    const suggestionsHtml = data.top_tasks.map((task, index) => {
+        const isTopPick = index === 0;
+        const rankNum = index + 1;
 
-                return `
+        return `
                     <div class="suggest-item ${isTopPick ? 'top-pick' : ''}">
                         <div style="display: flex; align-items: center; margin-bottom: 15px;">
                             <span class="suggest-rank">${rankNum}</span>
@@ -441,115 +549,115 @@
 
                         ${isTopPick && !task.blocked ? `
                             <div style="margin-top: 15px; padding: 12px; background: linear-gradient(135deg, #194624ff 0%, #094130ff 100%); color: white; border-radius: 8px; text-align: center; font-weight: 600;">
-                                RECOMMENDED: Start this task now for maximum productivity!
+                                RECOMMENDED: 
                             </div>
                         ` : ''}
                     </div>
                 `;
-            }).join('');
+    }).join('');
 
-            resultsDiv.innerHTML = `
+    resultsDiv.innerHTML = `
                 <div style="margin-bottom: 20px; padding: 15px; background: #e8f4f8; border-radius: 8px; border-left: 4px solid #1b213bff;">
                     <strong>Analysis Summary:</strong> ${data.total_available} tasks analyzed
                     ${data.cyclic_task_ids && data.cyclic_task_ids.length > 0 ? `<br><span style="color: #532327ff;">${data.cyclic_task_ids.length} cyclic dependencies detected: ${data.cyclic_task_ids.join(', ')}</span>` : ''}
                 </div>
                 ${suggestionsHtml}
             `;
+}
+
+async function loadDependencyGraph() {
+    const apiUrl = document.getElementById('apiUrl').value;
+
+    try {
+        const response = await fetch(`${apiUrl}/api/tasks/list/`);
+
+        if (!response.ok) {
+            throw new Error('Failed to load task list for graph');
         }
 
-        async function loadDependencyGraph() {
-            const apiUrl = document.getElementById('apiUrl').value;
+        const data = await response.json();
 
-            try {
-                const response = await fetch(`${apiUrl}/api/tasks/list/`);
+        // Generate DOT format from task list
+        graphDotData = generateDotFromTasks(data.tasks);
+        displayDependencyGraph();
 
-                if (!response.ok) {
-                    throw new Error('Failed to load task list for graph');
-                }
+    } catch (error) {
+        console.error('Error loading dependency graph:', error);
+    }
+}
 
-                const data = await response.json();
+function generateDotFromTasks(tasks) {
+    let dot = 'digraph {\n';
+    dot += '  rankdir=TB;\n';
+    dot += '  node [shape=box, style="rounded,filled", fillcolor="#e8f4f8", fontname="Arial"];\n';
+    dot += '  edge [color="#1b213bff", penwidth=2];\n\n';
 
-                // Generate DOT format from task list
-                graphDotData = generateDotFromTasks(data.tasks);
-                displayDependencyGraph();
+    tasks.forEach(task => {
+        const label = task.title.replace(/"/g, '\\"');
+        dot += `  ${task.id} [label="${label}"];\n`;
+    });
 
-            } catch (error) {
-                console.error('Error loading dependency graph:', error);
-            }
-        }
+    dot += '\n';
 
-        function generateDotFromTasks(tasks) {
-            let dot = 'digraph {\n';
-            dot += '  rankdir=TB;\n';
-            dot += '  node [shape=box, style="rounded,filled", fillcolor="#e8f4f8", fontname="Arial"];\n';
-            dot += '  edge [color="#1b213bff", penwidth=2];\n\n';
-
-            tasks.forEach(task => {
-                const label = task.title.replace(/"/g, '\\"');
-                dot += `  ${task.id} [label="${label}"];\n`;
+    tasks.forEach(task => {
+        if (task.dependencies && task.dependencies.length > 0) {
+            task.dependencies.forEach(depId => {
+                dot += `  ${depId} -> ${task.id};\n`;
             });
-
-            dot += '\n';
-
-            tasks.forEach(task => {
-                if (task.dependencies && task.dependencies.length > 0) {
-                    task.dependencies.forEach(depId => {
-                        dot += `  ${depId} -> ${task.id};\n`;
-                    });
-                }
-            });
-
-            dot += '}\n';
-            return dot;
         }
+    });
 
-        function displayDependencyGraph() {
-            const card = document.getElementById('graphCard');
-            const dotSource = document.getElementById('dotSource');
+    dot += '}\n';
+    return dot;
+}
 
-            card.style.display = 'block';
+function displayDependencyGraph() {
+    const card = document.getElementById('graphCard');
+    const dotSource = document.getElementById('dotSource');
 
-            if (graphDotData) {
-                dotSource.textContent = graphDotData;
-            }
-        }
+    card.style.display = 'block';
 
-        function renderGraph() {
-            const viz = document.getElementById('graphVisualization');
+    if (graphDotData) {
+        dotSource.textContent = graphDotData;
+    }
+}
 
-            if (!graphDotData) {
-                viz.innerHTML = '<p style="text-align: center; color: #5f282dff;">No graph data available. Please analyze tasks first.</p>';
-                return;
-            }
+function renderGraph() {
+    const viz = document.getElementById('graphVisualization');
 
-            viz.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner" style="margin: 0 auto 20px;"></div><p>Rendering graph visualization...</p></div>';
+    if (!graphDotData) {
+        viz.innerHTML = '<p style="text-align: center; color: #5f282dff;">No graph data available. Please analyze tasks first.</p>';
+        return;
+    }
 
-            // Try to use Viz.js if available, otherwise show instructions
-            if (typeof Viz !== 'undefined') {
-                try {
-                    const viz = new Viz();
-                    viz.renderSVGElement(graphDotData)
-                        .then(element => {
-                            const container = document.getElementById('graphVisualization');
-                            container.innerHTML = '';
-                            container.appendChild(element);
-                        })
-                        .catch(error => {
-                            showGraphError(error);
-                        });
-                } catch (error) {
+    viz.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner" style="margin: 0 auto 20px;"></div><p>Rendering graph visualization...</p></div>';
+
+    // Try to use Viz.js if available, otherwise show instructions
+    if (typeof Viz !== 'undefined') {
+        try {
+            const viz = new Viz();
+            viz.renderSVGElement(graphDotData)
+                .then(element => {
+                    const container = document.getElementById('graphVisualization');
+                    container.innerHTML = '';
+                    container.appendChild(element);
+                })
+                .catch(error => {
                     showGraphError(error);
-                }
-            } else {
-                // Show alternative visualization using simple HTML/CSS
-                renderSimpleGraph();
-            }
+                });
+        } catch (error) {
+            showGraphError(error);
         }
+    } else {
+        // Show alternative visualization using simple HTML/CSS
+        renderSimpleGraph();
+    }
+}
 
-        function renderSimpleGraph() {
-            const viz = document.getElementById('graphVisualization');
+function renderSimpleGraph() {
+    const viz = document.getElementById('graphVisualization');
 
-            viz.innerHTML = `
+    viz.innerHTML = `
                 <div style="text-align: center; padding: 20px;">
                     <h3 style="color: #1b213bff; margin-bottom: 15px;">Simplified Dependency View</h3>
                     <p style="color: #666; margin-bottom: 20px;">For full graph visualization, use the DOT format below with Graphviz Online:</p>
@@ -559,11 +667,11 @@
                     <p style="color: #666; margin-top: 15px; font-size: 0.9em;">Copy the DOT format below and paste it in the online viewer</p>
                 </div>
             `;
-        }
+}
 
-        function showGraphError(error) {
-            const viz = document.getElementById('graphVisualization');
-            viz.innerHTML = `
+function showGraphError(error) {
+    const viz = document.getElementById('graphVisualization');
+    viz.innerHTML = `
                 <div style="padding: 20px; text-align: center;">
                     <p style="color: #5f282dff; margin-bottom: 15px;">Could not render graph: ${error.message}</p>
                     <p style="color: #666; margin-bottom: 15px;">Use an external tool to visualize the DOT format:</p>
@@ -572,21 +680,21 @@
                     </a>
                 </div>
             `;
-        }
+}
 
-        function downloadGraphDot() {
-            if (!graphDotData) {
-                alert('No graph data available. Please analyze tasks first.');
-                return;
-            }
+function downloadGraphDot() {
+    if (!graphDotData) {
+        alert('No graph data available. Please analyze tasks first.');
+        return;
+    }
 
-            const blob = new Blob([graphDotData], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'dependency_graph.dot';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }
+    const blob = new Blob([graphDotData], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'dependency_graph.dot';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}

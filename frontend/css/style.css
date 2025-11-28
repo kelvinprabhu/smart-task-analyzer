@@ -11,6 +11,22 @@
             padding: 20px;
         }
 
+        .error-box {
+            background: #ffe2e2;
+            padding: 15px;
+            border-left: 5px solid #612727;
+            border-radius: 6px;
+            margin-top: 15px;
+        }
+
+        .error-box h3 {
+            margin-top: 0;
+        }
+
+        .error-box ul {
+            margin-left: 20px;
+        }
+
         .container {
             max-width: 1400px;
             margin: 0 auto;
@@ -522,4 +538,17 @@
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
+        }
+
+        .warning-cycle {
+            background: #fff3cd;
+            padding: 10px;
+            border-left: 4px solid #76582c;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .cycle-ids {
+            font-weight: bold;
+            color: #6e2d2b;
         }
