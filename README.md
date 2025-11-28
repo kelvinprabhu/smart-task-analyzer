@@ -51,7 +51,7 @@ The API will be available at `http://localhost:8000`
 
 The font-end will be
 
-Access the frontend at `http://localhost:8080`
+Access the frontend at `http://localhost:8000`
 
 ### Testing with Postman
 Import the provided `Smart Task Analyzer - Complete Test Suite.postman_collection.json` file into Postman to test all API endpoints.
