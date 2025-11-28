@@ -7,7 +7,15 @@ from .serializers import TaskSerializer
 from .scoring.priority_engine import PriorityEngine, TaskValidator
 from django.db import connection
 import graphviz
-
+import base64
+import io
+import base64
+import matplotlib
+matplotlib.use('Agg')  # Use non-GUI backend
+import matplotlib.pyplot as plt
+import networkx as nx
+from django.http import HttpResponse
+from io import BytesIO
 #     def post(self, request):
 #         serializer = TaskSerializer(data=request.data, many=True)
 
@@ -133,8 +141,9 @@ class AnalyzeTasksView(APIView):
         all_warnings.extend(invalid_dependencies)
         
         # Phase 3: Run scoring engine
-        engine = PriorityEngine(created)
-        scored, cycles = engine.run()
+        all_tasks = Task.objects.all().order_by("id")
+        engine = PriorityEngine(all_tasks)
+        scored, cycles = engine.run()        
         
         # Add cycle warnings
         if cycles:
@@ -154,6 +163,9 @@ class AnalyzeTasksView(APIView):
         
         ordered = unblocked + blocked_tasks
         
+# Filter to include only tasks submitted in this request
+        created_ids = {t.id for t in created}
+        ordered = [e for e in ordered if e["task"].id in created_ids]
         # Phase 5: Format response with invalid task info
         response_data = {
             "scored_tasks": [
@@ -299,24 +311,77 @@ class ListTasksView(APIView):
 
         return Response({"tasks": data}, status=200)
 
+class DeleteTasksView(APIView):
+    def delete(self, request):
+        """
+        Delete one or multiple tasks.
+        Accepts:
+          - Query param:   /api/tasks/delete/?id=3
+          - JSON payload:  { "ids": [1, 2, 3] }
+        """
 
-class GraphView(APIView):
-    def get(self, request):
-        tasks = Task.objects.all()
-        engine = PriorityEngine(tasks)
-        cyclic = set(engine.detect_cycles())
+        # ---- Case 1: ?id=3 ----
+        task_id = request.query_params.get("id")
 
-        dot = graphviz.Digraph()
+        # ---- Case 2: body: {"ids": [...] } ----
+        body_ids = request.data.get("ids") if isinstance(request.data, dict) else None
 
-        for t in tasks:
-            color = "red" if t.id in cyclic else "black"
-            dot.node(str(t.id), t.title, color=color)
+        # Validate IDs
+        if task_id:
+            try:
+                task = Task.objects.get(id=task_id)
+                task.delete()
+                return Response({
+                    "deleted": [int(task_id)],
+                    "message": f"Task {task_id} deleted successfully"
+                }, status=200)
+            except Task.DoesNotExist:
+                return Response(
+                    {"error": f"Task {task_id} does not exist"},
+                    status=404
+                )
 
-            for dep in t.dependencies.all():
-                dot.edge(str(dep.id), str(t.id))
+        elif body_ids:
+            invalid = []
+            deleted = []
 
-        return Response({"graph_dot": dot.source})
-    
+            for tid in body_ids:
+                try:
+                    Task.objects.get(id=tid).delete()
+                    deleted.append(tid)
+                except Task.DoesNotExist:
+                    invalid.append(tid)
+
+            return Response({
+                "deleted": deleted,
+                "invalid_or_missing": invalid,
+                "message": "Delete operation completed"
+            }, status=200)
+
+        else:
+            return Response(
+                {"error": "Provide ?id=task_id or JSON { 'ids': [...] }"},
+                status=400
+            )
+
+
+    class GraphView(APIView):
+        def get(self, request):
+            tasks = Task.objects.all()
+            engine = PriorityEngine(tasks)
+            cyclic = set(engine.detect_cycles())
+
+            dot = graphviz.Digraph()
+
+            for t in tasks:
+                color = "red" if t.id in cyclic else "black"
+                dot.node(str(t.id), t.title, color=color)
+
+                for dep in t.dependencies.all():
+                    dot.edge(str(dep.id), str(t.id))
+
+            return Response({"graph_dot": dot.source})
+        
 
 class EisenhowerView(APIView):
     def get(self, request):
@@ -375,3 +440,50 @@ class EisenhowerView(APIView):
 
         return Response({"matrix": response})
 
+
+class GraphView(APIView):
+    def get(self, request):
+        tasks = Task.objects.all()
+        engine = PriorityEngine(tasks)
+        cyclic = set(engine.detect_cycles())
+
+        # Create directed graph
+        G = nx.DiGraph()
+        
+        # Add nodes and edges
+        for t in tasks:
+            G.add_node(t.id, title=t.title, cyclic=t.id in cyclic)
+            for dep in t.dependencies.all():
+                G.add_edge(dep.id, t.id)
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=(12, 8))
+        pos = nx.spring_layout(G, k=2, iterations=50)
+        
+        # Separate cyclic and normal nodes
+        cyclic_nodes = [n for n in G.nodes() if G.nodes[n].get('cyclic', False)]
+        normal_nodes = [n for n in G.nodes() if not G.nodes[n].get('cyclic', False)]
+        
+        # Draw nodes
+        nx.draw_networkx_nodes(G, pos, nodelist=normal_nodes, 
+                               node_color='lightblue', node_size=1000, ax=ax)
+        nx.draw_networkx_nodes(G, pos, nodelist=cyclic_nodes, 
+                               node_color='red', node_size=1000, ax=ax)
+        
+        # Draw edges and labels
+        nx.draw_networkx_edges(G, pos, edge_color='gray', 
+                               arrows=True, arrowsize=20, ax=ax)
+        
+        labels = {t.id: t.title for t in tasks}
+        nx.draw_networkx_labels(G, pos, labels, font_size=8, ax=ax)
+        
+        plt.axis('off')
+        plt.tight_layout()
+        
+        # Save to bytes
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+        buf.seek(0)
+        plt.close(fig)
+        
+        return HttpResponse(buf.getvalue(), content_type='image/png')
