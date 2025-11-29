@@ -2,6 +2,43 @@
 
 A Django REST API-based intelligent task prioritization system that uses graph theory and multi-factor scoring to help users decide what to work on next.
 
+## Project Structure
+
+```
+SMART-TASK-ANALYZER/
+├── backend/
+│   ├── smart_task_analyzer/      # Django project settings
+│   │   ├── settings.py
+│   │   └── urls.py
+│   ├── taskapi/                   # Main API app
+│   │   ├── models.py              # Task model
+│   │   ├── serializers.py         # DRF serializers
+│   │   ├── views.py               # API views
+│   │   ├── urls.py                # API routing
+│   │   └── scoring/
+│   │       └── priority_engine.py # Core algorithm
+│   ├── manage.py
+│   └── db.sqlite3
+├── frontend/
+│   ├── index.html
+│   ├── css/style.css
+│   └── js/main.js
+├── requirements.txt
+├── README.md
+└── Smart Task Analyzer - Complete Test Suite.postman_collection.json
+```
+
+### Screenshots 
+- Smart Task Analyzer - Startup Page
+![Smart Task Analyzer - Startup Page](<Screenshot/Smart Task Analyzer - Startup Page.png>)
+- Smart Task Analyzer - Initial Analyse
+![Smart Task Analyzer - Initial Analyse](<Screenshot/Smart Task Analyzer - Initial Analyse.png>)
+-  Task Analyzer - Top Suggestioins
+![Smart Task Analyzer - Top Suggestioins](<Screenshot/Smart Task Analyzer - Top Suggestioins.png>)
+- Smart Task Analyzer - Validations
+![Smart Task Analyzer - Validations](<Screenshot/Smart Task Analyzer - Validations.png>)
+
+
 ## Table of Contents
 - [Setup Instructions](#setup-instructions)
 - [Algorithm Explanation](#algorithm-explanation)
@@ -47,11 +84,11 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-The API will be available at `http://localhost:8000`
+The API will be available at `http://localhost:8000/api/tasks/`
 
 The font-end will be
 
-Access the frontend at `http://localhost:8080`
+Access the frontend at `http://localhost:8000`
 
 ### Testing with Postman
 Import the provided `Smart Task Analyzer - Complete Test Suite.postman_collection.json` file into Postman to test all API endpoints.
@@ -306,38 +343,3 @@ Get visual dependency graph (PNG image)
 ## Postman Collection
 - export it to postman and text with all the API Endpoints and Test Cases
 [Postman colection](<Smart Task Analyzer - Complete Test Suite.postman_collection.json>)
-## Project Structure
-
-```
-SMART-TASK-ANALYZER/
-├── backend/
-│   ├── smart_task_analyzer/      # Django project settings
-│   │   ├── settings.py
-│   │   └── urls.py
-│   ├── taskapi/                   # Main API app
-│   │   ├── models.py              # Task model
-│   │   ├── serializers.py         # DRF serializers
-│   │   ├── views.py               # API views
-│   │   ├── urls.py                # API routing
-│   │   └── scoring/
-│   │       └── priority_engine.py # Core algorithm
-│   ├── manage.py
-│   └── db.sqlite3
-├── frontend/
-│   ├── index.html
-│   ├── css/style.css
-│   └── js/main.js
-├── requirements.txt
-├── README.md
-└── Smart Task Analyzer - Complete Test Suite.postman_collection.json
-```
-
-### Screenshots 
-- Smart Task Analyzer - Startup Page
-![Smart Task Analyzer - Startup Page](<Screenshot/Smart Task Analyzer - Startup Page.png>)
-- Smart Task Analyzer - Initial Analyse
-![Smart Task Analyzer - Initial Analyse](<Screenshot/Smart Task Analyzer - Initial Analyse.png>)
--  Task Analyzer - Top Suggestioins
-![Smart Task Analyzer - Top Suggestioins](<Screenshot/Smart Task Analyzer - Top Suggestioins.png>)
-- Smart Task Analyzer - Validations
-![Smart Task Analyzer - Validations](<Screenshot/Smart Task Analyzer - Validations.png>)
