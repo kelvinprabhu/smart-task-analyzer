@@ -343,3 +343,13 @@ Get visual dependency graph (PNG image)
 ## Postman Collection
 - export it to postman and text with all the API Endpoints and Test Cases
 [Postman colection](<Smart Task Analyzer - Complete Test Suite.postman_collection.json>)
+
+
+## Docker Image 
+- The main command to pull your Docker image is:
+
+docker pull kelvinprabhu/smart-task-analyzer:latest
+
+- to run it
+
+docker run -p 8000:8000 kelvinprabhu/smart-task-analyzer:latest
